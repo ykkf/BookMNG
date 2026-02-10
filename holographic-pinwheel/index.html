@@ -57,6 +57,19 @@
 
         // --- Publisher Helpers ---
         // --- Publisher Helpers ---
+        function getPubColor(pubId) {
+            ensureState();
+            const pub = window.state.publishers.find(p => p.id === pubId);
+            return pub ? pub.color : '#9e9e9e';
+        }
+
+        function getPubShort(pubId) {
+            ensureState();
+            const pub = window.state.publishers.find(p => p.id === pubId);
+            return pub ? pub.short : '?';
+        }
+
+        // --- Publisher Helpers ---
         function generatePublisherOptions(selectedId) {
             ensureState();
             // Defaults to first publisher if no selection, unless it's "add-new"
@@ -528,9 +541,16 @@
 
         async function startCamera() {
             const videoEl = document.getElementById('camera-feed');
-            if (!videoEl) return;
+            if (!videoEl) {
+                console.error("Video element not found");
+                alert('エラー: カメラ画面の初期化に失敗しました。');
+                return;
+            }
 
             try {
+                // Stop any existing stream first
+                stopCamera();
+
                 videoStream = await navigator.mediaDevices.getUserMedia({
                     video: { facingMode: 'environment' },
                     audio: false
@@ -538,7 +558,13 @@
                 videoEl.srcObject = videoStream;
             } catch (err) {
                 console.error("Camera Error:", err);
-                alert('カメラを起動できませんでした。\nブラウザの権限設定を確認してください。');
+                if (err.name === 'NotAllowedError' || err.name === 'PermissionDeniedError') {
+                    alert('カメラのアクセス権限がありません。\nブラウザの設定でカメラを許可してください。');
+                } else if (err.name === 'NotFoundError') {
+                    alert('カメラが見つかりません。');
+                } else {
+                    alert('カメラを起動できませんでした: ' + err.message);
+                }
                 closeCamera();
             }
         }
