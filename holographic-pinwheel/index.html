@@ -691,6 +691,14 @@
             m.classList.remove('hidden');
         }
 
+        function selectReasonPreset(text) {
+            var input = document.getElementById('reason-text');
+            if (input) input.value = text;
+            // ワンタップで即保存して閉じる
+            saveReason();
+        }
+        window.selectReasonPreset = selectReasonPreset;
+
         function saveReason() {
             var input = document.getElementById('reason-text');
             var reason = input ? input.value.trim() : '';
@@ -863,8 +871,23 @@
         <!-- Modal: Reason -->
         <div id="modal-reason" class="modal hidden">
             <div class="modal-content">
-                <h3 style="margin-bottom: 16px;">未購入の理由</h3>
-                <input type="text" id="reason-text" class="text-input" placeholder="例: お金がない、発売日前...">
+                <h3 style="margin-bottom: 16px;">買えなかった理由は？</h3>
+                <div id="reason-presets"
+                    style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-bottom: 16px;">
+                    <button onclick="selectReasonPreset('置いてなかった(在庫切れ)')" class="reason-preset-btn"
+                        style="padding: 12px 8px; border: 1px solid #ddd; border-radius: 8px; background: #f9f9f9; font-size: 14px; cursor: pointer; transition: background 0.2s;">🚫
+                        置いてなかった<br><span style="font-size:11px; color:#888;">(在庫切れ)</span></button>
+                    <button onclick="selectReasonPreset('まだ発売前')" class="reason-preset-btn"
+                        style="padding: 12px 8px; border: 1px solid #ddd; border-radius: 8px; background: #f9f9f9; font-size: 14px; cursor: pointer; transition: background 0.2s;">📅
+                        まだ発売前</button>
+                    <button onclick="selectReasonPreset('別の店で買う')" class="reason-preset-btn"
+                        style="padding: 12px 8px; border: 1px solid #ddd; border-radius: 8px; background: #f9f9f9; font-size: 14px; cursor: pointer; transition: background 0.2s;">🏪
+                        別の店で買う</button>
+                    <button onclick="selectReasonPreset('お金がなかった')" class="reason-preset-btn"
+                        style="padding: 12px 8px; border: 1px solid #ddd; border-radius: 8px; background: #f9f9f9; font-size: 14px; cursor: pointer; transition: background 0.2s;">💸
+                        お金がなかった</button>
+                </div>
+                <input type="text" id="reason-text" class="text-input" placeholder="その他メモ" style="margin-bottom: 12px;">
                 <div class="modal-actions">
                     <button onclick="document.getElementById('modal-reason').classList.add('hidden')"
                         class="btn-flat">キャンセル</button>
