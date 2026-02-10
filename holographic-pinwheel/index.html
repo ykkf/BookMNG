@@ -229,6 +229,14 @@
             // Basic edit fallback
             window.currentDetailId = id;
             navigateToScreen('screen-detail-edit');
+
+            // Show buttons that might have been hidden by Manual Add
+            const btnDel = document.getElementById('btn-delete-item');
+            if (btnDel) btnDel.classList.remove('hidden');
+
+            const btnReason = document.getElementById('btn-detail-reason');
+            if (btnReason) btnReason.classList.remove('hidden');
+
             // Populate basics
             ensureState();
             const item = window.state.unpurchased.find(i => i.id === id);
@@ -266,8 +274,9 @@
             const btnDel = document.getElementById('btn-delete-item');
             if (btnDel) btnDel.classList.add('hidden');
 
+            // Show Reason button for Manual Add too (as requested)
             const btnReason = document.getElementById('btn-detail-reason');
-            if (btnReason) btnReason.classList.add('hidden');
+            if (btnReason) btnReason.classList.remove('hidden');
 
             navigateToScreen('screen-detail-edit');
         }
@@ -319,10 +328,12 @@
                         volume: volume,
                         publisher: publisher,
                         status: 'unpurchased',
-                        reason: null,
+                        reason: window.tempNewItemReason || null, // Use temp reason if set
                         updatedAt: Date.now()
                     };
                     window.state.unpurchased.unshift(newItem); // Add to top
+                    // Reset temp reason
+                    window.tempNewItemReason = null;
                     showToast('追加しました(未購入)');
                 }
 
@@ -821,7 +832,7 @@
         <!-- Modal: Settings -->
         <div id="modal-settings" class="modal hidden">
             <div class="modal-content">
-                <h3>設定 <span style="font-size:12px; color:red;">v36</span></h3>
+                <h3>設定 <span style="font-size:12px; color:red;">v37</span></h3>
 
                 <div class="input-group">
                     <label class="input-label">購入済みデータの自動削除</label>
