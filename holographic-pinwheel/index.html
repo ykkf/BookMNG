@@ -56,17 +56,34 @@
         }
 
         // --- Publisher Helpers ---
+        // --- Publisher Helpers ---
         function generatePublisherOptions(selectedId) {
             ensureState();
-            // Defaults to first publisher if no selection
+            // Defaults to first publisher if no selection, unless it's "add-new"
             const defaultId = (window.state.publishers[0] && window.state.publishers[0].id) || '';
-            const targetId = selectedId === 'other' || !selectedId ? defaultId : selectedId;
+            let targetId = selectedId;
+            if (!targetId || targetId === 'other') targetId = defaultId;
 
             let html = window.state.publishers.map(p =>
                 `<option value="${p.id}" ${p.id === targetId ? 'selected' : ''}>${p.name}</option>`
             ).join('');
-            // REMOVED 'other' option as requested
+
+            // ADD 'Add New' option
+            html += `<option value="add-new">+ 出版社を追加...</option>`;
             return html;
+        }
+
+        function checkPublisherSelect(selectEl) {
+            if (selectEl.value === 'add-new') {
+                // Determine which screen we are in to know where to return or how to update
+                // For now, we update all selectors after adding.
+                window.publisherSelectTarget = selectEl;
+                openPublisherModal();
+                // Temporarily reset to index 0 to avoid sticking on "add-new" visually if cancelled
+                if (window.state.publishers.length > 0) {
+                    selectEl.value = window.state.publishers[0].id;
+                }
+            }
         }
 
         // --- Standalone Helper: Save ---
@@ -238,59 +255,68 @@
         }
 
         function saveDetailItem() {
-            ensureState(); // Ensure state exists
+            try {
+                ensureState(); // Ensure state exists
 
-            const titleInput = document.getElementById('detail-title');
-            const title = titleInput ? titleInput.value.trim() : '';
+                const titleInput = document.getElementById('detail-title');
+                const title = titleInput ? titleInput.value.trim() : '';
 
-            if (!title) {
-                alert('タイトルを入力してください');
-                return;
-            }
-
-            const volume = document.getElementById('detail-volume').value;
-            let publisher = document.getElementById('detail-publisher').value;
-
-            // Fallback if empty (should not happen with new default logic, but for safety)
-            if (!publisher && window.state.publishers.length > 0) {
-                publisher = window.state.publishers[0].id;
-            }
-
-            if (window.currentDetailId) {
-                // Update
-                let item = window.state.unpurchased.find(i => i.id === window.currentDetailId);
-                if (!item) item = window.state.purchased.find(i => i.id === window.currentDetailId);
-
-                if (item) {
-                    item.title = title;
-                    item.volume = volume;
-                    item.publisher = publisher;
-                    showToast('保存しました');
+                if (!title) {
+                    alert('タイトルを入力してください');
+                    return;
                 }
-            } else {
-                // Create New
-                const newItem = {
-                    id: Date.now().toString(),
-                    title: title,
-                    volume: volume,
-                    publisher: publisher,
-                    status: 'unpurchased',
-                    reason: null,
-                    updatedAt: Date.now()
-                };
-                window.state.unpurchased.unshift(newItem); // Add to top
-                showToast('追加しました(未購入)');
+
+                const volume = document.getElementById('detail-volume').value;
+                let publisher = document.getElementById('detail-publisher').value;
+
+                // Handle "add-new" being selected by accident or bug
+                if (publisher === 'add-new' || !publisher) {
+                    if (window.state.publishers.length > 0) {
+                        publisher = window.state.publishers[0].id;
+                    } else {
+                        publisher = 'shueisha'; // Fallback
+                    }
+                }
+
+                if (window.currentDetailId) {
+                    // Update
+                    let item = window.state.unpurchased.find(i => i.id === window.currentDetailId);
+                    if (!item) item = window.state.purchased.find(i => i.id === window.currentDetailId);
+
+                    if (item) {
+                        item.title = title;
+                        item.volume = volume;
+                        item.publisher = publisher;
+                        showToast('保存しました');
+                    }
+                } else {
+                    // Create New
+                    const newItem = {
+                        id: Date.now().toString(),
+                        title: title,
+                        volume: volume,
+                        publisher: publisher,
+                        status: 'unpurchased',
+                        reason: null,
+                        updatedAt: Date.now()
+                    };
+                    window.state.unpurchased.unshift(newItem); // Add to top
+                    showToast('追加しました(未購入)');
+                }
+
+                saveStateLocal();
+
+                // Clear Search/Filter
+                const sText = document.getElementById('search-text');
+                if (sText) sText.value = '';
+
+                renderHomeLocal(); // FORCE LOCAL RENDER
+
+                closeDetailEdit();
+            } catch (e) {
+                console.error(e);
+                alert('エラーが発生しました: ' + e.message);
             }
-
-            saveStateLocal();
-
-            // Clear Search/Filter
-            const sText = document.getElementById('search-text');
-            if (sText) sText.value = '';
-
-            renderHomeLocal(); // FORCE LOCAL RENDER
-
-            closeDetailEdit();
         }
 
         // Force Reset Function
@@ -440,7 +466,24 @@
             saveStateLocal();
             nameInput.value = '';
             document.getElementById('modal-publisher').classList.add('hidden');
-            forceRenderPublishers();
+
+            forceRenderPublishers(); // Refresh settings list
+
+            // Refresh manual add dropdown if open
+            if (window.publisherSelectTarget) {
+                window.publisherSelectTarget.innerHTML = generatePublisherOptions(newId);
+                window.publisherSelectTarget.value = newId;
+                window.publisherSelectTarget = null;
+            } else {
+                // Try to refresh just in case
+                const manualSelect = document.getElementById('detail-publisher');
+                if (manualSelect) {
+                    const curr = manualSelect.value;
+                    manualSelect.innerHTML = generatePublisherOptions(curr);
+                    manualSelect.value = curr;
+                }
+            }
+
             showToast('出版社を追加しました');
         };
 
@@ -655,7 +698,7 @@
                     </div>
                     <div class="input-group">
                         <label class="input-label">出版社</label>
-                        <select id="detail-publisher" class="text-input">
+                        <select id="detail-publisher" class="text-input" onchange="checkPublisherSelect(this)">
                             <!-- Options injected by JS -->
                         </select>
                     </div>
