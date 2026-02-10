@@ -364,6 +364,86 @@
             }
         }
 
+        // --- Publisher Management Helpers ---
+        function forceRenderPublishers() {
+            ensureState();
+            const container = document.getElementById('settings-publisher-list');
+            if (!container) return;
+
+            container.innerHTML = '';
+            window.state.publishers.forEach((p, index) => {
+                // Don't allow deleting the default 4 if you want to protect them, or allow all.
+                // Let's allow deleting custom ones, but maybe protect the big 4? 
+                // For now, simple implementation:
+                const div = document.createElement('div');
+                div.style.display = 'flex';
+                div.style.justifyContent = 'space-between';
+                div.style.padding = '4px';
+                div.style.borderBottom = '1px solid #eee';
+
+                div.innerHTML = `
+                    <span>${p.name}</span>
+                    <button onclick="deletePublisher('${p.id}')" style="color:red; border:none; background:none;">×</button>
+                 `;
+                container.appendChild(div);
+            });
+
+            // Add "Add" button at bottom
+            const addBtn = document.createElement('div');
+            addBtn.innerHTML = `<button onclick="openPublisherModal()" style="width:100%; margin-top:8px; color:var(--primary-color); border:1px dashed var(--primary-color); background:none; padding:4px;">+ 追加</button>`;
+            container.appendChild(addBtn);
+        }
+
+        function deletePublisher(id) {
+            if (!confirm('この出版社を削除しますか？')) return;
+            ensureState();
+            const idx = window.state.publishers.findIndex(p => p.id === id);
+            if (idx > -1) {
+                window.state.publishers.splice(idx, 1);
+                saveStateLocal();
+                forceRenderPublishers();
+                // Refresh dropdown in Filter
+                const fPub = document.getElementById('filter-publisher');
+                if (fPub) {
+                    const currentVal = fPub.value;
+                    let html = '<option value="all">全出版社</option>';
+                    html += window.state.publishers.map(p => `<option value="${p.id}">${p.name}</option>`).join('');
+                    fPub.innerHTML = html;
+                    fPub.value = currentVal;
+                }
+            }
+        }
+
+        function openPublisherModal() {
+            const m = document.getElementById('modal-publisher');
+            if (m) m.classList.remove('hidden');
+        }
+
+        document.getElementById('btn-close-pub-modal').onclick = function () {
+            document.getElementById('modal-publisher').classList.add('hidden');
+        };
+
+        document.getElementById('btn-save-publisher').onclick = function () {
+            const nameInput = document.getElementById('new-publisher-name');
+            const name = nameInput.value.trim();
+            if (!name) return;
+
+            ensureState();
+            const newId = 'pub_' + Date.now();
+            window.state.publishers.push({
+                id: newId,
+                name: name,
+                short: name.substring(0, 2),
+                color: '#888888' // Default gray
+            });
+
+            saveStateLocal();
+            nameInput.value = '';
+            document.getElementById('modal-publisher').classList.add('hidden');
+            forceRenderPublishers();
+            showToast('出版社を追加しました');
+        };
+
         function deleteAllPurchased() {
             if (!confirm('本当に全ての購入済みデータを削除しますか？')) return;
             try {
@@ -511,11 +591,7 @@
                     <div class="input-group">
                         <label class="input-label">出版社</label>
                         <select id="detail-publisher" class="text-input">
-                            <option value="shueisha">集英社</option>
-                            <option value="kodansha">講談社</option>
-                            <option value="shogakukan">小学館</option>
-                            <option value="kadokawa">KADOKAWA</option>
-                            <option value="other">その他</option>
+                            <!-- Options injected by JS -->
                         </select>
                     </div>
 
