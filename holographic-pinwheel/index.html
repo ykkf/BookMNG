@@ -480,47 +480,52 @@
             if (m) m.classList.remove('hidden');
         }
 
-        document.getElementById('btn-close-pub-modal').onclick = function () {
-            document.getElementById('modal-publisher').classList.add('hidden');
-        };
-
-        document.getElementById('btn-save-publisher').onclick = function () {
-            const nameInput = document.getElementById('new-publisher-name');
-            const name = nameInput.value.trim();
-            if (!name) return;
-
-            ensureState();
-            const newId = 'pub_' + Date.now();
-            window.state.publishers.push({
-                id: newId,
-                name: name,
-                short: name.substring(0, 2),
-                color: '#888888' // Default gray
-            });
-
-            saveStateLocal();
-            nameInput.value = '';
-            document.getElementById('modal-publisher').classList.add('hidden');
-
-            forceRenderPublishers(); // Refresh settings list
-
-            // Refresh manual add dropdown if open
-            if (window.publisherSelectTarget) {
-                window.publisherSelectTarget.innerHTML = generatePublisherOptions(newId);
-                window.publisherSelectTarget.value = newId;
-                window.publisherSelectTarget = null;
-            } else {
-                // Try to refresh just in case
-                const manualSelect = document.getElementById('detail-publisher');
-                if (manualSelect) {
-                    const curr = manualSelect.value;
-                    manualSelect.innerHTML = generatePublisherOptions(curr);
-                    manualSelect.value = curr;
-                }
+        // CRITICAL: Wrap DOM access in load handler (script is in <head>, DOM not ready)
+        window.addEventListener('load', function () {
+            var closeBtn = document.getElementById('btn-close-pub-modal');
+            if (closeBtn) {
+                closeBtn.onclick = function () {
+                    document.getElementById('modal-publisher').classList.add('hidden');
+                };
             }
 
-            showToast('出版社を追加しました');
-        };
+            var saveBtn = document.getElementById('btn-save-publisher');
+            if (saveBtn) {
+                saveBtn.onclick = function () {
+                    var nameInput = document.getElementById('new-publisher-name');
+                    var name = nameInput.value.trim();
+                    if (!name) return;
+
+                    ensureState();
+                    var newId = 'pub_' + Date.now();
+                    window.state.publishers.push({
+                        id: newId,
+                        name: name,
+                        short: name.substring(0, 2),
+                        color: '#888888'
+                    });
+
+                    saveStateLocal();
+                    nameInput.value = '';
+                    document.getElementById('modal-publisher').classList.add('hidden');
+                    forceRenderPublishers();
+
+                    if (window.publisherSelectTarget) {
+                        window.publisherSelectTarget.innerHTML = generatePublisherOptions(newId);
+                        window.publisherSelectTarget.value = newId;
+                        window.publisherSelectTarget = null;
+                    } else {
+                        var manualSelect = document.getElementById('detail-publisher');
+                        if (manualSelect) {
+                            var curr = manualSelect.value;
+                            manualSelect.innerHTML = generatePublisherOptions(curr);
+                            manualSelect.value = curr;
+                        }
+                    }
+                    showToast('出版社を追加しました');
+                };
+            }
+        });
 
         function deleteAllPurchased() {
             if (!confirm('本当に全ての購入済みデータを削除しますか？')) return;
@@ -544,8 +549,8 @@
             setTimeout(() => { toast.classList.add('hidden'); }, 3000);
         }
 
-        // --- Camera Logic ---
-        let videoStream = null;
+        // --- Camera Logic (var to avoid TDZ if script halts) ---
+        var videoStream = null;
 
         function openCamera() {
             navigateToScreen('screen-camera');
@@ -652,12 +657,63 @@
             navigateToScreen('screen-home');
         }
 
-        // Attach to window
+        // --- Delete & Reason Functions ---
+        function deleteDetailItem() {
+            if (!window.currentDetailId) { alert('削除対象がありません'); return; }
+            if (!confirm('このアイテムを削除しますか？')) return;
+            ensureState();
+            var idx = window.state.unpurchased.findIndex(function (i) { return i.id === window.currentDetailId; });
+            if (idx > -1) {
+                window.state.unpurchased.splice(idx, 1);
+            } else {
+                idx = window.state.purchased.findIndex(function (i) { return i.id === window.currentDetailId; });
+                if (idx > -1) window.state.purchased.splice(idx, 1);
+            }
+            saveStateLocal();
+            renderHomeLocal();
+            closeDetailEdit();
+            showToast('削除しました');
+        }
+
+        function openDetailReasonModal() {
+            var m = document.getElementById('modal-reason');
+            if (!m) { alert('理由モーダルが見つかりません'); return; }
+            var input = document.getElementById('reason-text');
+            if (!input) return;
+            input.value = '';
+            if (window.currentDetailId) {
+                ensureState();
+                var item = window.state.unpurchased.find(function (i) { return i.id === window.currentDetailId; });
+                if (item && item.reason) input.value = item.reason;
+            } else {
+                if (window.tempNewItemReason) input.value = window.tempNewItemReason;
+            }
+            m.classList.remove('hidden');
+        }
+
+        function saveReason() {
+            var input = document.getElementById('reason-text');
+            var reason = input ? input.value.trim() : '';
+            if (window.currentDetailId) {
+                ensureState();
+                var item = window.state.unpurchased.find(function (i) { return i.id === window.currentDetailId; });
+                if (item) { item.reason = reason; saveStateLocal(); }
+            } else {
+                window.tempNewItemReason = reason;
+            }
+            showToast('理由を保存しました');
+            document.getElementById('modal-reason').classList.add('hidden');
+        }
+
+        // Attach ALL to window
         window.openGallery = openGallery;
         window.handleFileSelect = handleFileSelect;
         window.takePicture = takePicture;
         window.openCamera = openCamera;
         window.closeCamera = closeCamera;
+        window.deleteDetailItem = deleteDetailItem;
+        window.openDetailReasonModal = openDetailReasonModal;
+        window.saveReason = saveReason;
         // Service Worker Update Logic
         if ('serviceWorker' in navigator) {
             navigator.serviceWorker.register('./sw.js').then(reg => {
@@ -832,7 +888,7 @@
         <!-- Modal: Settings -->
         <div id="modal-settings" class="modal hidden">
             <div class="modal-content">
-                <h3>設定 <span style="font-size:12px; color:red;">v37</span></h3>
+                <h3>設定 <span style="font-size:12px; color:red;">v38</span></h3>
 
                 <div class="input-group">
                     <label class="input-label">購入済みデータの自動削除</label>
