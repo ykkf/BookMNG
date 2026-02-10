@@ -1,4 +1,4 @@
-const CACHE_NAME = 'manga-manager-v33-init-fix';
+const CACHE_NAME = 'manga-manager-v34-camera-fix';
 const ASSETS = [
     './',
     './index.html',
