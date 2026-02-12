@@ -4,7 +4,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>Manga Manager Prototype</title>
+
     <link rel="stylesheet" href="style.css">
     <!-- Material Icons -->
     <link href="https://fonts.googleapis.com/icon?family=Material+Icons" rel="stylesheet">
@@ -12,8 +12,7 @@
     <link rel="icon" href="icon.svg" type="image/svg+xml">
     <link rel="apple-touch-icon" href="icon.svg">
     <meta name="theme-color" content="#6200ee">
-    <!-- Tesseract.js for OCR -->
-    <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
+
     <script>
         // Emergency Inline Script for Settings & Manual Add
         // This ensures these functions exist even if app.js fails to load or update immediately.
@@ -37,16 +36,19 @@
                                 { id: 'shogakukan', name: '小学館', short: 'Sk', color: '#ffeb3b', textColor: 'black' },
                                 { id: 'kadokawa', name: 'KADOKAWA', short: 'Kd', color: '#1a237e' }
                             ]
+
                         };
+                        window.state.authors = []; // Default empty
                         saveStateLocal();
                     }
                 } catch (e) {
-                    window.state = { unpurchased: [], purchased: [], settings: {}, publishers: [] };
+                    window.state = { unpurchased: [], purchased: [], settings: {}, publishers: [], authors: [] };
                 }
             }
             // Ensure arrays exist
             if (!window.state.unpurchased) window.state.unpurchased = [];
             if (!window.state.purchased) window.state.purchased = [];
+            if (!window.state.authors) window.state.authors = []; // Ensure authors array
             if (!window.state.publishers || window.state.publishers.length === 0) {
                 window.state.publishers = [
                     { id: 'shueisha', name: '集英社', short: 'S', color: '#e50012' },
@@ -101,6 +103,29 @@
             }
         }
 
+        // --- Author Helpers ---
+        function generateAuthorOptions(selectedName) {
+            ensureState();
+            let html = '<option value="">(未設定)</option>';
+            window.state.authors.forEach(a => {
+                const isSel = a.name === selectedName ? 'selected' : '';
+                html += `<option value="${a.name}" ${isSel}>${a.name}</option>`;
+            });
+            html += `<option value="add-new">+ 作者を追加...</option>`;
+            return html;
+        }
+
+        function checkAuthorSelect(selectEl) {
+            if (selectEl.value === 'add-new') {
+                window.authorSelectTarget = selectEl;
+                openAuthorModal();
+                selectEl.value = ''; // Reset temporarily
+            }
+        }
+
+        window.generateAuthorOptions = generateAuthorOptions;
+        window.checkAuthorSelect = checkAuthorSelect;
+
         // Expose helpers globally to prevent scope issues
         window.getPubColor = getPubColor;
         window.getPubShort = getPubShort;
@@ -133,7 +158,8 @@
             function matchesFilter(item) {
                 let matches = true;
                 if (searchText) {
-                    matches = item.title.toLowerCase().includes(searchText);
+                    matches = item.title.toLowerCase().includes(searchText) ||
+                        (item.author && item.author.toLowerCase().includes(searchText));
                 }
                 if (matches && filterPubVal !== 'all') {
                     matches = item.publisher === filterPubVal;
@@ -214,19 +240,21 @@
             `;
 
             // Reason tag (show on unpurchased items with a reason)
-            const reasonHtml = (!isPurchased && item.reason)
-                ? `<span style="font-size:11px; color:#e65100; background:#fff3e0; padding:2px 6px; border-radius:4px; margin-left:8px;">${item.reason}</span>`
-                : '';
+
+
+            // Find publisher name
+            const pubObj = window.state.publishers.find(p => p.id === item.publisher);
+            const pubName = pubObj ? pubObj.name : '?';
 
             el.innerHTML = `
                 <div class="card-info" onclick="openManualEditFallback('${item.id}')">
                     <div class="card-title">
-                        <span style="font-size:12px; color:#666; margin-right:4px;">[${getPubShort(item.publisher)}]</span>
+                        <span style="font-size:12px; color:#666; margin-right:4px;">[${pubName}]</span>
                         ${item.title}
                     </div>
+                    <div style="font-size:10px; color:#888; margin-left: 4px;">${item.author || ''}</div>
                     <div style="display:flex; align-items:center;">
-                        <span class="card-vol">${item.volume}巻</span>
-                        ${reasonHtml}
+                        ${item.volume ? '<span class="card-vol">' + item.volume + '巻</span>' : ''}
                     </div>
                 </div>
                 <div class="card-actions">
@@ -280,14 +308,13 @@
         function openManualEditFallback(id) {
             // Basic edit fallback
             window.currentDetailId = id;
-            navigateToScreen('screen-detail-edit');
+            navigateToScreen('screen-add');
 
             // Show buttons that might have been hidden by Manual Add
             const btnDel = document.getElementById('btn-delete-item');
             if (btnDel) btnDel.classList.remove('hidden');
 
-            const btnReason = document.getElementById('btn-detail-reason');
-            if (btnReason) btnReason.classList.remove('hidden');
+
 
             // Populate basics
             ensureState();
@@ -296,6 +323,13 @@
             if (item) {
                 document.getElementById('detail-title').value = item.title;
                 document.getElementById('detail-volume').value = item.volume;
+
+                // Populate Author
+                const authorSelect = document.getElementById('detail-author');
+                if (authorSelect) {
+                    authorSelect.innerHTML = generateAuthorOptions(item.author);
+                    authorSelect.value = item.author || '';
+                }
 
                 // Populate publisher dropdown
                 const pubSelect = document.getElementById('detail-publisher');
@@ -320,8 +354,14 @@
             // Reset Form
             const titleInput = document.getElementById('detail-title');
             const volInput = document.getElementById('detail-volume');
+            const authorInput = document.getElementById('detail-author'); // Select
             if (titleInput) titleInput.value = '';
             if (volInput) volInput.value = '';
+
+            if (authorInput) {
+                authorInput.innerHTML = generateAuthorOptions('');
+                authorInput.value = '';
+            }
 
             // Publisher Reset
             const pubSelect = document.getElementById('detail-publisher');
@@ -338,11 +378,9 @@
             const btnDel = document.getElementById('btn-delete-item');
             if (btnDel) btnDel.classList.add('hidden');
 
-            // Show Reason button for Manual Add too (as requested)
-            const btnReason = document.getElementById('btn-detail-reason');
-            if (btnReason) btnReason.classList.remove('hidden');
 
-            navigateToScreen('screen-detail-edit');
+
+            navigateToScreen('screen-add');
         }
 
         function closeDetailEdit() {
@@ -362,6 +400,7 @@
                 }
 
                 const volume = document.getElementById('detail-volume').value;
+                const author = document.getElementById('detail-author').value;
                 let publisher = document.getElementById('detail-publisher').value;
 
                 // Handle "add-new" being selected by accident or bug
@@ -381,6 +420,7 @@
                     if (item) {
                         item.title = title;
                         item.volume = volume;
+                        item.author = author;
                         item.publisher = publisher;
                         showToast('保存しました');
                     }
@@ -390,14 +430,14 @@
                         id: Date.now().toString(),
                         title: title,
                         volume: volume,
+                        author: author,
                         publisher: publisher,
                         status: 'unpurchased',
-                        reason: window.tempNewItemReason || null, // Use temp reason if set
                         updatedAt: Date.now()
                     };
                     window.state.unpurchased.unshift(newItem); // Add to top
                     // Reset temp reason
-                    window.tempNewItemReason = null;
+
                     showToast('追加しました(未購入)');
                 }
 
@@ -465,7 +505,7 @@
 
             const pTitle = document.getElementById('page-title');
             if (screenId === 'screen-home' && pTitle) {
-                pTitle.textContent = 'Manga Manager';
+                pTitle.textContent = 'Book Manager';
             }
         }
 
@@ -479,6 +519,7 @@
                     autoDelete.value = window.state.settings.autoDeletePeriod || '30';
                 }
                 if (window.forceRenderPublishers) window.forceRenderPublishers();
+                if (window.forceRenderAuthors) window.forceRenderAuthors();
             } catch (e) { console.error(e); }
         }
 
@@ -599,6 +640,92 @@
                         }
                     }
                     showToast('出版社を追加しました');
+                    updatePublisherFilter(); // Fix: Ensure filter is updated immediately
+                };
+            }
+        });
+
+        // --- Author Management ---
+        function forceRenderAuthors() {
+            ensureState();
+            const container = document.getElementById('settings-author-list');
+            if (!container) return;
+            container.innerHTML = '';
+            window.state.authors.forEach((a, index) => {
+                const div = document.createElement('div');
+                div.style.display = 'flex';
+                div.style.justifyContent = 'space-between';
+                div.style.padding = '4px';
+                div.style.borderBottom = '1px solid #eee';
+                div.innerHTML = `
+                    <span>${a.name}</span>
+                    <button onclick="deleteAuthor('${a.name}')" style="color:red; border:none; background:none;">×</button>
+                `;
+                container.appendChild(div);
+            });
+            // Add "Add" button at bottom
+            const addBtn = document.createElement('div');
+            addBtn.innerHTML = `<button onclick="openAuthorModal()" style="width:100%; margin-top:8px; color:var(--primary-color); border:1px dashed var(--primary-color); background:none; padding:4px;">+ 追加</button>`;
+            container.appendChild(addBtn);
+        }
+
+        function deleteAuthor(name) {
+            if (!confirm('この作者を削除しますか？')) return;
+            ensureState();
+            const idx = window.state.authors.findIndex(a => a.name === name);
+            if (idx > -1) {
+                window.state.authors.splice(idx, 1);
+                saveStateLocal();
+                forceRenderAuthors();
+            }
+        }
+        window.deleteAuthor = deleteAuthor;
+
+        function openAuthorModal() {
+            const m = document.getElementById('modal-author');
+            if (m) m.classList.remove('hidden');
+        }
+        window.openAuthorModal = openAuthorModal;
+
+        window.addEventListener('load', function () {
+            // Author Modal Logic
+            var closeBtn = document.getElementById('btn-close-auth-modal');
+            if (closeBtn) {
+                closeBtn.onclick = function () {
+                    document.getElementById('modal-author').classList.add('hidden');
+                };
+            }
+            var saveBtn = document.getElementById('btn-save-author');
+            if (saveBtn) {
+                saveBtn.onclick = function () {
+                    var nameInput = document.getElementById('new-author-name');
+                    var name = nameInput.value.trim();
+                    if (!name) return;
+                    ensureState();
+                    // Check duplicate
+                    if (!window.state.authors.find(a => a.name === name)) {
+                        window.state.authors.push({ name: name });
+                        saveStateLocal();
+                    }
+                    nameInput.value = '';
+                    document.getElementById('modal-author').classList.add('hidden');
+                    forceRenderAuthors();
+
+                    // Refresh dropdowns if active
+                    if (window.authorSelectTarget) {
+                        window.authorSelectTarget.innerHTML = generateAuthorOptions(name);
+                        window.authorSelectTarget.value = name; // Select new
+                        window.authorSelectTarget = null;
+                    } else {
+                        // Refresh manual add dropdown
+                        const manualSel = document.getElementById('detail-author');
+                        if (manualSel) {
+                            const curr = manualSel.value;
+                            manualSel.innerHTML = generateAuthorOptions(curr);
+                            manualSel.value = name; // Auto select new
+                        }
+                    }
+                    showToast('作者を追加しました');
                 };
             }
         });
@@ -625,381 +752,6 @@
             setTimeout(() => { toast.classList.add('hidden'); }, 3000);
         }
 
-        // --- Camera Logic (var to avoid TDZ if script halts) ---
-        var videoStream = null;
-
-        function openCamera() {
-            navigateToScreen('screen-camera');
-            startCamera();
-        }
-
-        function closeCamera() {
-            stopCamera();
-            navigateToScreen('screen-home');
-        }
-
-        async function startCamera() {
-            const videoEl = document.getElementById('camera-feed');
-            if (!videoEl) {
-                console.error("Video element not found");
-                alert('エラー: カメラ画面の初期化に失敗しました。');
-                return;
-            }
-
-            try {
-                // Stop any existing stream first
-                stopCamera();
-
-                videoStream = await navigator.mediaDevices.getUserMedia({
-                    video: { facingMode: 'environment' },
-                    audio: false
-                });
-                videoEl.srcObject = videoStream;
-            } catch (err) {
-                console.error("Camera Error:", err);
-                if (err.name === 'NotAllowedError' || err.name === 'PermissionDeniedError') {
-                    alert('カメラのアクセス権限がありません。\nブラウザの設定でカメラを許可してください。');
-                } else if (err.name === 'NotFoundError') {
-                    alert('カメラが見つかりません。');
-                } else {
-                    alert('カメラを起動できませんでした: ' + err.message);
-                }
-                closeCamera();
-            }
-        }
-
-        function stopCamera() {
-            if (videoStream) {
-                videoStream.getTracks().forEach(track => track.stop());
-                videoStream = null;
-            }
-        }
-
-        // --- OCR Pending Items (temporary before registration) ---
-        window.ocrPendingItems = [];
-
-        function takePicture() {
-            const btn = document.getElementById('btn-shutter');
-            if (btn) btn.style.backgroundColor = 'red';
-
-            setTimeout(() => {
-                if (btn) btn.style.backgroundColor = 'white';
-
-                if (videoStream) {
-                    // Capture frame from video
-                    const videoEl = document.getElementById('camera-feed');
-                    const canvas = document.createElement('canvas');
-                    canvas.width = videoEl.videoWidth || 640;
-                    canvas.height = videoEl.videoHeight || 480;
-                    canvas.getContext('2d').drawImage(videoEl, 0, 0);
-                    const dataUrl = canvas.toDataURL('image/png');
-                    stopCamera();
-                    processOCR(dataUrl);
-                } else {
-                    const fi = document.getElementById('camera-file-input');
-                    if (fi) fi.click();
-                }
-            }, 500);
-        }
-
-        function openGallery() {
-            const input = document.getElementById('camera-file-input');
-            if (input) {
-                input.removeAttribute('capture');
-                input.click();
-            }
-        }
-
-        function handleFileSelect(input) {
-            if (input.files && input.files[0]) {
-                const reader = new FileReader();
-                reader.onload = function (e) {
-                    processOCR(e.target.result);
-                };
-                reader.readAsDataURL(input.files[0]);
-            }
-            input.value = '';
-        }
-
-        // --- OCR Processing with Tesseract.js ---
-        async function processOCR(imageSource) {
-            // Show loading overlay
-            showOcrLoading(true);
-            navigateToScreen('screen-home');
-
-            try {
-                const result = await Tesseract.recognize(imageSource, 'jpn+eng', {
-                    logger: m => {
-                        if (m.status === 'recognizing text') {
-                            const pct = Math.round((m.progress || 0) * 100);
-                            const loadMsg = document.getElementById('ocr-loading-text');
-                            if (loadMsg) loadMsg.textContent = `読み取り中... ${pct}%`;
-                        }
-                    }
-                });
-
-                const rawText = result.data.text || '';
-                console.log('OCR Raw:', rawText);
-
-                // Parse lines into potential items
-                const items = parseOcrText(rawText);
-
-                if (items.length === 0) {
-                    showOcrLoading(false);
-                    showToast('テキストを読み取れませんでした');
-                    return;
-                }
-
-                // Store as pending and show edit screen
-                window.ocrPendingItems = items;
-                showOcrLoading(false);
-                renderOcrEditScreen();
-                navigateToScreen('screen-edit');
-            } catch (err) {
-                console.error('OCR Error:', err);
-                showOcrLoading(false);
-                showToast('OCR処理に失敗しました: ' + err.message);
-            }
-        }
-
-        function showOcrLoading(show) {
-            let overlay = document.getElementById('ocr-loading-overlay');
-            if (!overlay) {
-                overlay = document.createElement('div');
-                overlay.id = 'ocr-loading-overlay';
-                overlay.style.cssText = 'position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.7);z-index:9999;display:flex;flex-direction:column;align-items:center;justify-content:center;';
-                overlay.innerHTML = `
-                    <div style="width:60px;height:60px;border:4px solid rgba(255,255,255,0.3);border-top-color:white;border-radius:50%;animation:spin 1s linear infinite;"></div>
-                    <p id="ocr-loading-text" style="color:white;font-size:18px;margin-top:16px;">読み取り中... 0%</p>
-                `;
-                document.body.appendChild(overlay);
-                // Add spin animation if not exists
-                if (!document.getElementById('spin-style')) {
-                    const style = document.createElement('style');
-                    style.id = 'spin-style';
-                    style.textContent = '@keyframes spin { to { transform: rotate(360deg); } }';
-                    document.head.appendChild(style);
-                }
-            }
-            overlay.style.display = show ? 'flex' : 'none';
-        }
-
-        // --- Parse OCR text into items ---
-        function parseOcrText(rawText) {
-            ensureState();
-            const lines = rawText.split('\n').map(l => l.trim()).filter(l => l.length > 1);
-            const items = [];
-
-            lines.forEach(line => {
-                // Try to extract volume number
-                let title = line;
-                let volume = '';
-
-                // Match patterns like "タイトル 25巻", "タイトル 25", "タイトル(25)", etc.
-                const volMatch = line.match(/[\s　]*(\d+)[\s　]*巻?[\s　]*$/)
-                    || line.match(/[\(（](\d+)[\)）]/)
-                    || line.match(/[\s　]+(\d+)[\s　]*$/);
-                if (volMatch) {
-                    volume = volMatch[1];
-                    title = line.replace(volMatch[0], '').trim();
-                }
-
-                if (title.length < 1) return; // Skip empty
-
-                items.push({
-                    id: Date.now().toString() + '_' + Math.random().toString(36).substr(2, 5),
-                    rawText: line,
-                    title: title,
-                    volume: volume || '1',
-                    publisher: window.state.publishers[0] ? window.state.publishers[0].id : 'shueisha',
-                    suggestions: generateSuggestions(title)
-                });
-            });
-
-            return items;
-        }
-
-        // --- AI Suggestion Generation ---
-        function generateSuggestions(ocrTitle) {
-            ensureState();
-            const suggestions = [];
-            const lowerTitle = ocrTitle.toLowerCase();
-
-            // 1. Check correction dictionary
-            const corrections = JSON.parse(localStorage.getItem('manga_corrections') || '[]');
-            corrections.forEach(c => {
-                if (c.ocrText.toLowerCase() === lowerTitle || lowerTitle.includes(c.ocrText.toLowerCase())) {
-                    suggestions.push({ text: c.correctedText, source: 'history', score: c.count || 1 });
-                }
-            });
-
-            // 2. Match against existing items in library
-            const allItems = [...(window.state.unpurchased || []), ...(window.state.purchased || [])];
-            const seen = new Set(suggestions.map(s => s.text));
-
-            allItems.forEach(item => {
-                if (seen.has(item.title)) return;
-                const itemLower = item.title.toLowerCase();
-                // Fuzzy match: if OCR text contains part of existing title or vice versa
-                if (itemLower.includes(lowerTitle) || lowerTitle.includes(itemLower) ||
-                    levenshteinSimilar(lowerTitle, itemLower, 0.5)) {
-                    suggestions.push({ text: item.title, source: 'library', score: 0.5 });
-                    seen.add(item.title);
-                }
-            });
-
-            // Sort by score desc, limit to 5
-            suggestions.sort((a, b) => b.score - a.score);
-            return suggestions.slice(0, 5);
-        }
-
-        // Simple Levenshtein similarity check
-        function levenshteinSimilar(a, b, threshold) {
-            if (a.length === 0 || b.length === 0) return false;
-            const maxLen = Math.max(a.length, b.length);
-            if (maxLen > 30) return false; // Skip very long strings
-            const matrix = [];
-            for (let i = 0; i <= b.length; i++) matrix[i] = [i];
-            for (let j = 0; j <= a.length; j++) matrix[0][j] = j;
-            for (let i = 1; i <= b.length; i++) {
-                for (let j = 1; j <= a.length; j++) {
-                    matrix[i][j] = b[i - 1] === a[j - 1]
-                        ? matrix[i - 1][j - 1]
-                        : Math.min(matrix[i - 1][j - 1] + 1, matrix[i][j - 1] + 1, matrix[i - 1][j] + 1);
-                }
-            }
-            const dist = matrix[b.length][a.length];
-            return (1 - dist / maxLen) >= threshold;
-        }
-
-        // --- Render OCR Edit Screen ---
-        function renderOcrEditScreen() {
-            const list = document.getElementById('ocr-list');
-            if (!list) return;
-            list.innerHTML = '';
-            ensureState();
-
-            window.ocrPendingItems.forEach((item, index) => {
-                const card = document.createElement('div');
-                card.className = 'ocr-edit-card';
-                card.id = 'ocr-card-' + index;
-                card.style.cssText = 'background:white;border-radius:12px;padding:16px;margin:8px 16px;box-shadow:0 2px 8px rgba(0,0,0,0.1);';
-
-                // Suggestion chips HTML
-                let chipsHtml = '';
-                if (item.suggestions && item.suggestions.length > 0) {
-                    chipsHtml = '<div style="display:flex;gap:6px;overflow-x:auto;padding:4px 0;margin-top:4px;">';
-                    item.suggestions.forEach(s => {
-                        const icon = s.source === 'history' ? '🔄' : '📚';
-                        chipsHtml += `<button onclick="applyOcrSuggestion(${index}, '${s.text.replace(/'/g, "\\'")}')"
-                            style="flex-shrink:0;padding:6px 12px;border:1px solid var(--primary-color);background:#f3e8ff;color:var(--primary-color);border-radius:20px;font-size:12px;cursor:pointer;white-space:nowrap;">
-                            ${icon} ${s.text}
-                        </button>`;
-                    });
-                    chipsHtml += '</div>';
-                }
-
-                // Publisher options
-                const pubOptions = generatePublisherOptions(item.publisher);
-
-                card.innerHTML = `
-                    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">
-                        <span style="font-size:11px;color:#999;">OCR: ${item.rawText}</span>
-                        <button onclick="removeOcrItem(${index})" style="border:none;background:none;color:#ff5252;font-size:20px;cursor:pointer;padding:4px;">
-                            <span class="material-icons" style="font-size:20px;">delete</span>
-                        </button>
-                    </div>
-                    <div style="margin-bottom:8px;">
-                        <label style="font-size:12px;color:#666;">タイトル</label>
-                        <input type="text" id="ocr-title-${index}" value="${item.title}" class="text-input" style="font-size:16px;font-weight:bold;">
-                        ${chipsHtml}
-                    </div>
-                    <div style="display:flex;gap:12px;margin-bottom:8px;">
-                        <div style="flex:0 0 80px;">
-                            <label style="font-size:12px;color:#666;">巻数</label>
-                            <input type="number" id="ocr-vol-${index}" value="${item.volume}" class="text-input" style="text-align:center;">
-                        </div>
-                        <div style="flex:1;">
-                            <label style="font-size:12px;color:#666;">出版社</label>
-                            <select id="ocr-pub-${index}" class="text-input" onchange="checkPublisherSelect(this)">
-                                ${pubOptions}
-                            </select>
-                        </div>
-                    </div>
-                `;
-                list.appendChild(card);
-            });
-
-            if (window.ocrPendingItems.length === 0) {
-                list.innerHTML = '<div class="empty-state" style="padding:40px;">認識されたアイテムがありません</div>';
-            }
-        }
-
-        function applyOcrSuggestion(index, text) {
-            const input = document.getElementById('ocr-title-' + index);
-            if (input) input.value = text;
-        }
-        window.applyOcrSuggestion = applyOcrSuggestion;
-
-        function removeOcrItem(index) {
-            window.ocrPendingItems.splice(index, 1);
-            renderOcrEditScreen();
-        }
-        window.removeOcrItem = removeOcrItem;
-
-        // --- Register All OCR Items ---
-        function saveOcrResults() {
-            ensureState();
-            const corrections = JSON.parse(localStorage.getItem('manga_corrections') || '[]');
-            let count = 0;
-
-            window.ocrPendingItems.forEach((item, index) => {
-                const titleInput = document.getElementById('ocr-title-' + index);
-                const volInput = document.getElementById('ocr-vol-' + index);
-                const pubSelect = document.getElementById('ocr-pub-' + index);
-
-                const title = titleInput ? titleInput.value.trim() : item.title;
-                const volume = volInput ? volInput.value : item.volume;
-                let publisher = pubSelect ? pubSelect.value : item.publisher;
-                if (publisher === 'add-new' || !publisher) publisher = window.state.publishers[0]?.id || 'shueisha';
-
-                if (!title) return;
-
-                // Save correction if title was modified
-                if (title !== item.title && item.rawText) {
-                    const existing = corrections.find(c => c.ocrText === item.rawText);
-                    if (existing) {
-                        existing.correctedText = title;
-                        existing.count = (existing.count || 1) + 1;
-                    } else {
-                        corrections.push({ ocrText: item.rawText, correctedText: title, count: 1 });
-                    }
-                }
-
-                const newItem = {
-                    id: Date.now().toString() + '_' + index,
-                    title: title,
-                    volume: volume,
-                    publisher: publisher,
-                    status: 'unpurchased',
-                    reason: null,
-                    updatedAt: Date.now()
-                };
-                window.state.unpurchased.unshift(newItem);
-                count++;
-            });
-
-            // Save correction dictionary
-            localStorage.setItem('manga_corrections', JSON.stringify(corrections));
-
-            saveStateLocal();
-            window.ocrPendingItems = [];
-            renderHomeLocal();
-            navigateToScreen('screen-home');
-            showToast(`${count}件のマンガを登録しました`);
-        }
-        window.saveOcrResults = saveOcrResults;
-
         // --- Delete & Reason Functions ---
         function deleteDetailItem() {
             if (!window.currentDetailId) { alert('削除対象がありません'); return; }
@@ -1018,85 +770,26 @@
             showToast('削除しました');
         }
 
-        function openDetailReasonModal() {
-            var m = document.getElementById('modal-reason');
-            if (!m) { alert('理由モーダルが見つかりません'); return; }
-            var input = document.getElementById('reason-text');
-            if (!input) return;
-            input.value = '';
-            if (window.currentDetailId) {
-                ensureState();
-                var item = window.state.unpurchased.find(function (i) { return i.id === window.currentDetailId; });
-                if (item && item.reason) input.value = item.reason;
-            } else {
-                if (window.tempNewItemReason) input.value = window.tempNewItemReason;
-            }
-            m.classList.remove('hidden');
-        }
-
-        function selectReasonPreset(text) {
-            var input = document.getElementById('reason-text');
-            if (input) input.value = text;
-            // ワンタップで即保存して閉じる
-            saveReason();
-        }
-        window.selectReasonPreset = selectReasonPreset;
-
-        function saveReason() {
-            var input = document.getElementById('reason-text');
-            var reason = input ? input.value.trim() : '';
-            if (window.currentDetailId) {
-                ensureState();
-                var item = window.state.unpurchased.find(function (i) { return i.id === window.currentDetailId; });
-                if (item) { item.reason = reason; saveStateLocal(); }
-            } else {
-                window.tempNewItemReason = reason;
-            }
-            showToast('理由を保存しました');
-            document.getElementById('modal-reason').classList.add('hidden');
-        }
-
         // Attach ALL to window
-        window.openGallery = openGallery;
-        window.handleFileSelect = handleFileSelect;
-        window.takePicture = takePicture;
-        window.openCamera = openCamera;
-        window.closeCamera = closeCamera;
         window.deleteDetailItem = deleteDetailItem;
-        window.openDetailReasonModal = openDetailReasonModal;
-        window.saveReason = saveReason;
+        window.openSettings = openSettings;
+        window.closeSettings = closeSettings;
+        window.saveSettings = saveSettings;
+        window.forceRenderPublishers = forceRenderPublishers;
+        window.forceRenderAuthors = forceRenderAuthors;
+        window.deletePublisher = deletePublisher;
+        window.deleteAllPurchased = deleteAllPurchased;
+        window.hardResetApp = hardResetApp;
+        window.openPublisherModal = openPublisherModal;
 
-        // --- OCR Edit Screen Button Handlers ---
-        window.addEventListener('load', function () {
-            const btnCancelEdit = document.getElementById('btn-cancel-edit');
-            if (btnCancelEdit) {
-                btnCancelEdit.onclick = function () {
-                    window.ocrPendingItems = [];
-                    navigateToScreen('screen-home');
-                };
-            }
-            const btnSaveEdit = document.getElementById('btn-save-edit');
-            if (btnSaveEdit) {
-                btnSaveEdit.onclick = function () {
-                    saveOcrResults();
-                };
-            }
-        });
 
-        // Service Worker Update Logic
+        // FORCE UNREGISTER SERVICE WORKER to fix caching issues
         if ('serviceWorker' in navigator) {
-            navigator.serviceWorker.register('./sw.js').then(reg => {
-                reg.onupdatefound = () => {
-                    const installingWorker = reg.installing;
-                    installingWorker.onstatechange = () => {
-                        if (installingWorker.state === 'installed' && navigator.serviceWorker.controller) {
-                            window.location.reload();
-                        }
-                    };
-                };
-            });
-            navigator.serviceWorker.addEventListener('controllerchange', () => {
-                window.location.reload();
+            navigator.serviceWorker.getRegistrations().then(function (registrations) {
+                for (let registration of registrations) {
+                    console.log('Unregistering SW:', registration);
+                    registration.unregister();
+                }
             });
         }
     </script>
@@ -1105,13 +798,11 @@
 
     <!-- App Container -->
     <div id="app">
-        <!-- Hidden File Input for Gallery/Camera Fallback -->
-        <input type="file" id="camera-file-input" accept="image/*" style="display: none;"
-            onchange="handleFileSelect(this)">
+
 
         <!-- Header -->
         <header>
-            <h1 id="page-title">Manga Manager</h1>
+            <h1 id="page-title">Book Manager</h1>
             <button id="btn-settings" class="icon-btn" style="margin-left: auto; margin-right: 8px;"
                 onclick="openSettings()">
                 <span class="material-icons">settings</span>
@@ -1131,7 +822,7 @@
                 </div>
 
                 <div class="search-container" style="padding: 8px 16px; background: #f5f5f5; display: flex; gap: 8px;">
-                    <input type="text" id="search-text" class="text-input" placeholder="タイトル検索..."
+                    <input type="text" id="search-text" class="text-input" placeholder="タイトル・作者検索..."
                         style="flex: 2; font-size: 14px;">
                     <select id="filter-publisher" class="text-input" style="flex: 1; font-size: 14px;">
                         <option value="all">全出版社</option>
@@ -1148,62 +839,26 @@
                 </div>
 
                 <button id="fab-add-manual" class="fab"
-                    style="left: 24px; right: auto; background-color: white; color: var(--primary-color);"
+                    style="left: auto; right: 24px; background-color: var(--primary-color); color: white;"
                     onclick="openManualAdd()">
                     <span class="material-icons">edit</span>
                 </button>
-
-                <button id="fab-camera" class="fab" onclick="openCamera()">
-                    <span class="material-icons">camera_alt</span>
-                </button>
             </section>
 
-            <!-- 2. Camera Screen -->
-            <section id="screen-camera" class="screen">
-                <div class="camera-view">
-                    <!-- Video for Real Camera -->
-                    <video id="camera-feed" autoplay playsinline
-                        style="position: absolute; width: 100%; height: 100%; object-fit: cover;"></video>
-
-                    <div class="camera-overlay">
-                        <div class="guide-frame"></div>
-                    </div>
-                </div>
-                <div class="camera-controls">
-                    <button id="btn-gallery" class="icon-btn" onclick="openGallery()">
-                        <span class="material-icons">photo_library</span>
-                    </button>
-                    <button id="btn-shutter" class="shutter-btn" onclick="takePicture()"></button>
-                    <button id="btn-close-camera" class="icon-btn" onclick="closeCamera()">
-                        <span class="material-icons">close</span>
-                    </button>
-                </div>
-            </section>
-
-            <!-- 3. OCR Edit Screen -->
-            <section id="screen-edit" class="screen">
-                <div class="edit-header-controls"
-                    style="padding: 0 16px; height: 56px; display: flex; align-items: center; justify-content: space-between; background: var(--primary-color); color: white; position: sticky; top: 0; z-index: 10;">
-                    <button id="btn-cancel-edit" class="icon-btn">
-                        <span class="material-icons">close</span>
-                    </button>
-                    <span style="font-size: 20px; font-weight: 500;">読取結果確認</span>
-                    <button id="btn-save-edit" class="icon-btn">
-                        <span class="material-icons">check</span>
-                    </button>
-                </div>
-                <div id="ocr-list" class="edit-list">
-                    <!-- Editable Cards w/ AI suggestions injected here -->
-                </div>
-            </section>
-
-            <!-- 4. Detail Edit Screen (Single Item) -->
-            <section id="screen-detail-edit" class="screen">
+            <!-- 2. Manual Add/Edit Screen -->
+            <section id="screen-add" class="screen">
                 <div class="edit-container">
                     <div class="input-group">
                         <label class="input-label">タイトル</label>
                         <input type="text" id="detail-title" class="text-input">
                     </div>
+                    <div class="input-group">
+                        <label class="input-label">作者</label>
+                        <select id="detail-author" class="text-input" onchange="checkAuthorSelect(this)">
+                            <!-- Injected -->
+                        </select>
+                    </div>
+
                     <div class="input-group">
                         <label class="input-label">巻数</label>
                         <input type="number" id="detail-volume" class="text-input" style="width: 80px;">
@@ -1220,8 +875,7 @@
                             onclick="closeDetailEdit()">戻る</button>
                         <button id="btn-delete-item" class="btn-flat text-danger"
                             onclick="deleteDetailItem()">削除</button>
-                        <button id="btn-detail-reason" class="btn-flat text-primary"
-                            onclick="openDetailReasonModal()">未購入理由...</button>
+
                         <button id="btn-save-detail" class="primary" style="margin-left: 8px;"
                             onclick="saveDetailItem()">保存</button>
                     </div>
@@ -1229,33 +883,7 @@
             </section>
         </main>
 
-        <!-- Modal: Reason -->
-        <div id="modal-reason" class="modal hidden">
-            <div class="modal-content">
-                <h3 style="margin-bottom: 16px;">買えなかった理由は？</h3>
-                <div id="reason-presets"
-                    style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-bottom: 16px;">
-                    <button onclick="selectReasonPreset('置いてなかった(在庫切れ)')" class="reason-preset-btn"
-                        style="padding: 12px 8px; border: 1px solid #ddd; border-radius: 8px; background: #f9f9f9; font-size: 14px; cursor: pointer; transition: background 0.2s;">🚫
-                        置いてなかった<br><span style="font-size:11px; color:#888;">(在庫切れ)</span></button>
-                    <button onclick="selectReasonPreset('まだ発売前')" class="reason-preset-btn"
-                        style="padding: 12px 8px; border: 1px solid #ddd; border-radius: 8px; background: #f9f9f9; font-size: 14px; cursor: pointer; transition: background 0.2s;">📅
-                        まだ発売前</button>
-                    <button onclick="selectReasonPreset('別の店で買う')" class="reason-preset-btn"
-                        style="padding: 12px 8px; border: 1px solid #ddd; border-radius: 8px; background: #f9f9f9; font-size: 14px; cursor: pointer; transition: background 0.2s;">🏪
-                        別の店で買う</button>
-                    <button onclick="selectReasonPreset('お金がなかった')" class="reason-preset-btn"
-                        style="padding: 12px 8px; border: 1px solid #ddd; border-radius: 8px; background: #f9f9f9; font-size: 14px; cursor: pointer; transition: background 0.2s;">💸
-                        お金がなかった</button>
-                </div>
-                <input type="text" id="reason-text" class="text-input" placeholder="その他メモ" style="margin-bottom: 12px;">
-                <div class="modal-actions">
-                    <button onclick="document.getElementById('modal-reason').classList.add('hidden')"
-                        class="btn-flat">キャンセル</button>
-                    <button onclick="saveReason()" class="primary">保存</button>
-                </div>
-            </div>
-        </div>
+
 
         <!-- Publisher Add Modal -->
         <div id="modal-publisher" class="modal hidden">
@@ -1269,10 +897,22 @@
             </div>
         </div>
 
+        <!-- Author Add Modal -->
+        <div id="modal-author" class="modal hidden">
+            <div class="modal-content">
+                <h3 style="margin-bottom: 16px;">作者を追加</h3>
+                <input type="text" id="new-author-name" class="text-input" placeholder="作者名">
+                <div class="modal-actions">
+                    <button id="btn-close-auth-modal" class="btn-flat">キャンセル</button>
+                    <button id="btn-save-author" class="primary">追加</button>
+                </div>
+            </div>
+        </div>
+
         <!-- Modal: Settings -->
         <div id="modal-settings" class="modal hidden">
             <div class="modal-content">
-                <h3>設定 <span style="font-size:12px; color:red;">v38</span></h3>
+                <h3>設定 <span style="font-size:12px; color:red;">v1</span></h3>
 
                 <div class="input-group">
                     <label class="input-label">購入済みデータの自動削除</label>
@@ -1294,6 +934,19 @@
                     <div id="settings-publisher-list"
                         style="max-height: 150px; overflow-y: auto; border: 1px solid #ddd; padding: 8px; border-radius: 4px; background: #fff;">
                         <!-- Publishers injected here -->
+                    </div>
+                </div>
+
+                <div class="input-group" style="margin-top: 20px;">
+                    <div
+                        style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px;">
+                        <label class="input-label" style="margin-bottom: 0;">作者管理</label>
+                        <button onclick="forceRenderAuthors()"
+                            style="background: none; border: none; color: var(--primary-color); font-size: 12px; cursor: pointer;">更新</button>
+                    </div>
+                    <div id="settings-author-list"
+                        style="max-height: 150px; overflow-y: auto; border: 1px solid #ddd; padding: 8px; border-radius: 4px; background: #fff;">
+                        <!-- Authors injected here -->
                     </div>
                 </div>
 

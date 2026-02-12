@@ -1,4 +1,4 @@
-const CACHE_NAME = 'manga-manager-v38-root-cause-fix';
+const CACHE_NAME = 'book-manager-v1';
 const ASSETS = [
     './',
     './index.html',
